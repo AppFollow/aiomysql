@@ -4,7 +4,7 @@ import asyncio
 
 import aiomysql
 from .connection import SAConnection
-from .exc import InvalidRequestError, ArgumentError
+from .exc import ArgumentError
 from ..utils import _PoolContextManager, _PoolAcquireContextManager
 from ..cursors import (
     Cursor, DeserializationCursor, DictCursor, SSCursor, SSDictCursor)
@@ -159,9 +159,6 @@ class Engine:
 
     def release(self, conn):
         """Revert back connection to pool."""
-        if conn.in_transaction:
-            raise InvalidRequestError("Cannot release a connection with "
-                                      "not finished transaction")
         raw = conn.connection
         return self._pool.release(raw)
 
