@@ -33,7 +33,7 @@ async def _prepare_procedure(conn):
     await conn.commit()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_description(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -59,7 +59,7 @@ async def test_description(connection_creator):
     assert cur.description is None
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_cursor_properties(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()
@@ -69,7 +69,7 @@ async def test_cursor_properties(connection_creator):
     assert cur.echo == conn.echo
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_scroll_relative(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -80,7 +80,7 @@ async def test_scroll_relative(connection_creator):
     assert (2, 'b') == ret
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_scroll_absolute(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -91,7 +91,7 @@ async def test_scroll_absolute(connection_creator):
     assert (3, 'c') == ret
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_scroll_errors(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()
@@ -106,7 +106,7 @@ async def test_scroll_errors(connection_creator):
         await cur.scroll(2, mode='not_valid_mode')
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_scroll_index_error(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -116,7 +116,7 @@ async def test_scroll_index_error(connection_creator):
         await cur.scroll(1000)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_close(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()
@@ -128,7 +128,7 @@ async def test_close(connection_creator):
     await cur.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_arraysize(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()
@@ -137,7 +137,7 @@ async def test_arraysize(connection_creator):
     assert 10 == cur.arraysize
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_rows(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -154,7 +154,7 @@ async def test_rows(connection_creator):
     await conn.commit()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_callproc(connection_creator):
     conn = await connection_creator()
     await _prepare_procedure(conn)
@@ -168,7 +168,7 @@ async def test_callproc(connection_creator):
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_fetchone_no_result(connection_creator):
     # test a fetchone() with no rows
     conn = await connection_creator()
@@ -183,7 +183,7 @@ async def test_fetchone_no_result(connection_creator):
         await c.execute("drop table test_nr")
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_fetchmany_no_result(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()
@@ -192,7 +192,7 @@ async def test_fetchmany_no_result(connection_creator):
     assert [] == r
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_fetchall_no_result(connection_creator):
     # test a fetchone() with no rows
     conn = await connection_creator()
@@ -202,7 +202,7 @@ async def test_fetchall_no_result(connection_creator):
     assert [] == r
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_fetchall_with_scroll(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -213,7 +213,7 @@ async def test_fetchall_with_scroll(connection_creator):
     assert ((2, 'b'), (3, 'c')) == ret
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_aggregates(connection_creator):
     """ test aggregate functions """
     conn = await connection_creator()
@@ -230,7 +230,7 @@ async def test_aggregates(connection_creator):
         await c.execute('drop table test_aggregates')
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_single_tuple(connection_creator):
     """ test a single tuple """
     conn = await connection_creator()
@@ -247,7 +247,7 @@ async def test_single_tuple(connection_creator):
         await c.execute("drop table mystuff")
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_executemany(connection_creator):
     conn = await connection_creator()
     await _prepare(conn)
@@ -266,7 +266,7 @@ async def test_executemany(connection_creator):
     assert row_count is None
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_custom_cursor(connection_creator):
     class MyCursor(Cursor):
         pass
@@ -278,7 +278,7 @@ async def test_custom_cursor(connection_creator):
     assert r == 42
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_custom_cursor_not_cursor_subclass(connection_creator):
     class MyCursor2:
         pass
@@ -287,7 +287,7 @@ async def test_custom_cursor_not_cursor_subclass(connection_creator):
         await conn.cursor(MyCursor2)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_morgify(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()
@@ -300,7 +300,7 @@ async def test_morgify(connection_creator):
     assert results == expected
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_execute_cancel(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()

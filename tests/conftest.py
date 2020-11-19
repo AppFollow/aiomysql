@@ -43,72 +43,72 @@ def unused_port():
     return f
 
 
-def pytest_generate_tests(metafunc):
-    if 'loop_type' in metafunc.fixturenames:
-        loop_type = ['asyncio', 'uvloop'] if uvloop else ['asyncio']
-        metafunc.parametrize("loop_type", loop_type)
+# def pytest_generate_tests(metafunc):
+#     if 'loop_type' in metafunc.fixturenames:
+#         loop_type = ['asyncio', 'uvloop'] if uvloop else ['asyncio']
+#         metafunc.parametrize("loop_type", loop_type)
 
 
 # This is here unless someone fixes the generate_tests bit
-@pytest.yield_fixture(scope='session')
+@pytest.fixture(scope='session')
 def mysql_tag():
     return os.environ.get('DBTAG', '10.5')
 
 
-@pytest.yield_fixture(scope='session')
+@pytest.fixture(scope='session')
 def mysql_image():
     return os.environ.get('DB', 'mariadb')
 
 
-@pytest.yield_fixture
-def loop(request, loop_type):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(None)
+# @pytest.fixture
+# def loop(request, loop_type):
+#     loop = asyncio.new_event_loop()
+#     asyncio.set_event_loop(None)
 
-    if uvloop and loop_type == 'uvloop':
-        loop = uvloop.new_event_loop()
-    else:
-        loop = asyncio.new_event_loop()
+#     if uvloop and loop_type == 'uvloop':
+#         loop = uvloop.new_event_loop()
+#     else:
+#         loop = asyncio.new_event_loop()
 
-    yield loop
+#     yield loop
 
-    if not loop._closed:
-        loop.call_soon(loop.stop)
-        loop.run_forever()
-        loop.close()
-    gc.collect()
-    asyncio.set_event_loop(None)
-
-
-@pytest.mark.tryfirst
-def pytest_pycollect_makeitem(collector, name, obj):
-    if collector.funcnamefilter(name):
-        if not callable(obj):
-            return
-        item = pytest.Function(name, parent=collector)
-        if 'run_loop' in item.keywords:
-            return list(collector._genfunctions(name, obj))
+#     if not loop._closed:
+#         loop.call_soon(loop.stop)
+#         loop.run_forever()
+#         loop.close()
+#     gc.collect()
+#     asyncio.set_event_loop(None)
 
 
-@pytest.mark.tryfirst
-def pytest_pyfunc_call(pyfuncitem):
-    """
-    Run asyncio marked test functions in an event loop instead of a normal
-    function call.
-    """
-    if 'run_loop' in pyfuncitem.keywords:
-        funcargs = pyfuncitem.funcargs
-        loop = funcargs['loop']
-        testargs = {arg: funcargs[arg]
-                    for arg in pyfuncitem._fixtureinfo.argnames}
-        loop.run_until_complete(pyfuncitem.obj(**testargs))
-        return True
+# @pytest.mark.tryfirst
+# def pytest_pycollect_makeitem(collector, name, obj):
+#     if collector.funcnamefilter(name):
+#         if not callable(obj):
+#             return
+#         item = pytest.Function(name, parent=collector)
+#         if 'run_loop' in item.keywords:
+#             return list(collector._genfunctions(name, obj))
 
 
-def pytest_runtest_setup(item):
-    if 'run_loop' in item.keywords and 'loop' not in item.fixturenames:
-        # inject an event loop fixture for all async tests
-        item.fixturenames.append('loop')
+# @pytest.mark.tryfirst
+# def pytest_pyfunc_call(pyfuncitem):
+#     """
+#     Run asyncio marked test functions in an event loop instead of a normal
+#     function call.
+#     """
+#     if 'run_loop' in pyfuncitem.keywords:
+#         funcargs = pyfuncitem.funcargs
+#         loop = funcargs['loop']
+#         testargs = {arg: funcargs[arg]
+#                     for arg in pyfuncitem._fixtureinfo.argnames}
+#         loop.run_until_complete(pyfuncitem.obj(**testargs))
+#         return True
+
+
+# def pytest_runtest_setup(item):
+#     if 'run_loop' in item.keywords and 'loop' not in item.fixturenames:
+#         # inject an event loop fixture for all async tests
+#         item.fixturenames.append('loop')
 
 
 def pytest_ignore_collect(path, config):
@@ -138,37 +138,33 @@ def mysql_params(mysql_server):
 
 
 # TODO: fix this workaround
-@asyncio.coroutine
-def _cursor_wrapper(conn):
-    cur = yield from conn.cursor()
+async def _cursor_wrapper(conn):
+    cur = await conn.cursor()
     return cur
 
 
-@pytest.yield_fixture
-def cursor(connection, loop):
-    cur = loop.run_until_complete(_cursor_wrapper(connection))
+@pytest.fixture
+async def cursor(connection):
+    cur = await connection.cursor()
     yield cur
-    loop.run_until_complete(cur.close())
+    await cur.close()
 
 
-@pytest.yield_fixture
-def connection(mysql_params, loop):
-    coro = aiomysql.connect(loop=loop, **mysql_params)
-    conn = loop.run_until_complete(coro)
+@pytest.fixture
+async def connection(mysql_params):
+    conn = await aiomysql.connect(loop=loop, **mysql_params)
     yield conn
-    loop.run_until_complete(conn.ensure_closed())
+    await conn.ensure_closed()
 
 
-@pytest.yield_fixture
-def connection_creator(mysql_params, loop):
+@pytest.fixture
+async def connection_creator(mysql_params):
     connections = []
 
-    @asyncio.coroutine
-    def f(**kw):
+    async def f(**kw):
         conn_kw = mysql_params.copy()
         conn_kw.update(kw)
-        _loop = conn_kw.pop('loop', loop)
-        conn = yield from aiomysql.connect(loop=_loop, **conn_kw)
+        conn = await aiomysql.connect(**conn_kw)
         connections.append(conn)
         return conn
 
@@ -176,21 +172,19 @@ def connection_creator(mysql_params, loop):
 
     for conn in connections:
         try:
-            loop.run_until_complete(conn.ensure_closed())
+            await conn.ensure_closed()
         except ConnectionResetError:
             pass
 
 
-@pytest.yield_fixture
-def pool_creator(mysql_params, loop):
+@pytest.fixture
+async def pool_creator(mysql_params):
     pools = []
 
-    @asyncio.coroutine
-    def f(**kw):
+    async def f(**kw):
         conn_kw = mysql_params.copy()
         conn_kw.update(kw)
-        _loop = conn_kw.pop('loop', loop)
-        pool = yield from aiomysql.create_pool(loop=_loop, **conn_kw)
+        pool = await aiomysql.create_pool(**conn_kw)
         pools.append(pool)
         return pool
 
@@ -198,10 +192,10 @@ def pool_creator(mysql_params, loop):
 
     for pool in pools:
         pool.close()
-        loop.run_until_complete(pool.wait_closed())
+        await pool.wait_closed()
 
 
-@pytest.yield_fixture
+@pytest.fixture
 def table_cleanup(loop, connection):
     table_list = []
     cursor = loop.run_until_complete(_cursor_wrapper(connection))

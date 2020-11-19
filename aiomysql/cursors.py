@@ -1,6 +1,8 @@
 import re
 import json
+import asyncio
 import warnings
+import logging
 import contextlib
 
 from pymysql.err import (
@@ -8,8 +10,9 @@ from pymysql.err import (
     DatabaseError, OperationalError, IntegrityError, InternalError,
     NotSupportedError, ProgrammingError)
 
-from .log import logger
 from .connection import FIELD_TYPE
+
+logger = logging.getLogger(__name__)
 
 # https://github.com/PyMySQL/PyMySQL/blob/master/pymysql/cursors.py#L11-L18
 
@@ -37,8 +40,8 @@ class Cursor:
         """Do not create an instance of a Cursor yourself. Call
         connections.Connection.cursor().
         """
+        self._loop = asyncio.get_event_loop()
         self._connection = connection
-        self._loop = self._connection.loop
         self._description = None
         self._rownumber = 0
         self._rowcount = -1

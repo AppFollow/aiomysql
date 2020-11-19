@@ -18,14 +18,14 @@ def fill_my_cnf(mysql_params):
         f2.write(tmpl.format_map(mysql_params))
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connect_timeout(connection_creator):
     # All exceptions are caught and raised as operational errors
     with pytest.raises(aiomysql.OperationalError):
         await connection_creator(connect_timeout=0.000000000001)
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_config_file(fill_my_cnf, connection_creator, mysql_params):
     tests_root = os.path.abspath(os.path.dirname(__file__))
     path = os.path.join(tests_root, 'fixtures/my.cnf')
@@ -43,7 +43,7 @@ async def test_config_file(fill_my_cnf, connection_creator, mysql_params):
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_config_file_with_different_group(fill_my_cnf,
                                                 connection_creator,
                                                 mysql_params):
@@ -66,7 +66,7 @@ async def test_config_file_with_different_group(fill_my_cnf,
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_utf8mb4(connection_creator):
     """This test requires MySQL >= 5.5"""
     charset = 'utf8mb4'
@@ -75,7 +75,7 @@ async def test_utf8mb4(connection_creator):
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_largedata(connection_creator):
     """Large query and response (>=16MB)"""
     conn = await connection_creator()
@@ -91,7 +91,7 @@ async def test_largedata(connection_creator):
         assert r[0] == t
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_escape_string(connection_creator):
     con = await connection_creator()
     cur = await con.cursor()
@@ -103,20 +103,20 @@ async def test_escape_string(connection_creator):
     assert con.escape("foo'bar") == "'foo''bar'"
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_sql_mode_param(connection_creator):
     con = await connection_creator(sql_mode='NO_BACKSLASH_ESCAPES')
     assert con.escape("foo'bar") == "'foo''bar'"
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_init_param(connection_creator):
     init_command = "SET sql_mode='NO_BACKSLASH_ESCAPES';"
     con = await connection_creator(init_command=init_command)
     assert con.escape("foo'bar") == "'foo''bar'"
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_autocommit(connection_creator):
     con = await connection_creator()
     assert con.get_autocommit() is False
@@ -132,7 +132,7 @@ async def test_autocommit(connection_creator):
     assert r[0] == 0
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_select_db(connection_creator):
     con = await connection_creator()
     current_db = 'test_pymysql'
@@ -148,7 +148,7 @@ async def test_select_db(connection_creator):
     assert r[0] == other_db
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connection_gone_away(connection_creator):
     # test
     # http://dev.mysql.com/doc/refman/5.0/en/gone-away.html
@@ -166,7 +166,7 @@ async def test_connection_gone_away(connection_creator):
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connection_info_methods(connection_creator):
     conn = await connection_creator()
     # trhead id is int
@@ -179,7 +179,7 @@ async def test_connection_info_methods(connection_creator):
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connection_set_charset(connection_creator):
     conn = await connection_creator()
     assert conn.character_set_name(), ('latin1' in 'utf8mb4')
@@ -187,7 +187,7 @@ async def test_connection_set_charset(connection_creator):
     assert conn.character_set_name() == 'utf8'
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connection_ping(connection_creator):
     conn = await connection_creator()
     await conn.ping()
@@ -197,7 +197,7 @@ async def test_connection_ping(connection_creator):
     assert conn.closed is False
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connection_properties(connection_creator, mysql_params):
     conn = await connection_creator()
     assert conn.host == mysql_params['host']
@@ -208,7 +208,7 @@ async def test_connection_properties(connection_creator, mysql_params):
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_connection_double_ensure_closed(connection_creator):
     conn = await connection_creator()
     assert conn.closed is False
@@ -218,7 +218,7 @@ async def test_connection_double_ensure_closed(connection_creator):
     assert conn.closed is True
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 @pytest.mark.usefixtures("disable_gc")
 async def test___del__(connection_creator):
     conn = await connection_creator()
@@ -227,21 +227,21 @@ async def test___del__(connection_creator):
         gc.collect()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_no_delay_warning(connection_creator):
     with pytest.warns(DeprecationWarning):
         conn = await connection_creator(no_delay=True)
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_no_delay_default_arg(connection_creator):
     conn = await connection_creator()
     assert conn._no_delay is True
     conn.close()
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_previous_cursor_not_closed(connection_creator):
     conn = await connection_creator()
     cur1 = await conn.cursor()
@@ -252,7 +252,7 @@ async def test_previous_cursor_not_closed(connection_creator):
     assert resp[0] == 3
 
 
-@pytest.mark.run_loop
+@pytest.mark.asyncio
 async def test_commit_during_multi_result(connection_creator):
     conn = await connection_creator()
     cur = await conn.cursor()

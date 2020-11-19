@@ -9,6 +9,7 @@ import sys
 import warnings
 import configparser
 import getpass
+import logging
 from functools import partial
 
 from pymysql.charset import charset_by_name, charset_by_id
@@ -37,12 +38,12 @@ from pymysql.connections import OKPacketWrapper
 from pymysql.connections import LoadLocalPacketWrapper
 from pymysql.connections import lenenc_int
 
-# from aiomysql.utils import _convert_to_str
 from .cursors import Cursor
 from .utils import _ConnectionContextManager, _ContextManager
-from .log import logger
 
 DEFAULT_USER = getpass.getuser()
+
+logger = logging.getLogger(__name__)
 
 
 def connect(host="localhost", user=None, password="",
@@ -52,7 +53,7 @@ def connect(host="localhost", user=None, password="",
             client_flag=0, cursorclass=Cursor, init_command=None,
             connect_timeout=None, read_default_group=None,
             no_delay=None, autocommit=False, echo=False,
-            local_infile=False, loop=None, ssl=None, auth_plugin='',
+            local_infile=False, ssl=None, auth_plugin='',
             program_name='', server_public_key=None):
     """See connections.Connection.__init__() for information about
     defaults."""
@@ -65,7 +66,7 @@ def connect(host="localhost", user=None, password="",
                     connect_timeout=connect_timeout,
                     read_default_group=read_default_group,
                     no_delay=no_delay, autocommit=autocommit, echo=echo,
-                    local_infile=local_infile, loop=loop, ssl=ssl,
+                    local_infile=local_infile, ssl=ssl,
                     auth_plugin=auth_plugin, program_name=program_name)
     return _ConnectionContextManager(coro)
 
@@ -90,7 +91,7 @@ class Connection:
                  client_flag=0, cursorclass=Cursor, init_command=None,
                  connect_timeout=None, read_default_group=None,
                  no_delay=None, autocommit=False, echo=False,
-                 local_infile=False, loop=None, ssl=None, auth_plugin='',
+                 local_infile=False, ssl=None, auth_plugin='',
                  program_name='', server_public_key=None):
         """
         Establish a connection to the MySQL database. Accepts several
@@ -134,10 +135,7 @@ class Connection:
             handshaking with MySQL. (default: sys.argv[0])
         :param server_public_key: SHA256 authentication plugin public
             key value.
-        :param loop: asyncio loop
         """
-        self._loop = loop or asyncio.get_event_loop()
-
         if use_unicode is None and sys.version_info[0] > 2:
             use_unicode = True
 
@@ -170,7 +168,7 @@ class Connection:
         self._db = db
         self._no_delay = no_delay
         self._echo = echo
-        self._last_usage = self._loop.time()
+        self._last_usage = asyncio.get_event_loop().time()
         self._client_auth_plugin = auth_plugin
         self._server_auth_plugin = ""
         self._auth_plugin_used = ""
@@ -270,10 +268,6 @@ class Connection:
     def last_usage(self):
         """Return time() when connection was used."""
         return self._last_usage
-
-    @property
-    def loop(self):
-        return self._loop
 
     @property
     def closed(self):
@@ -399,7 +393,7 @@ class Connection:
         :raises TypeError: cursor_class is not a subclass of Cursor.
         """
         self._ensure_alive()
-        self._last_usage = self._loop.time()
+        self._last_usage = asyncio.get_event_loop().time()
         try:
             if cursors and \
                     any(not issubclass(cursor, Cursor) for cursor in cursors):
@@ -415,7 +409,7 @@ class Connection:
             cur = cursor_class(self, self._echo)
         else:
             cur = self.cursorclass(self, self._echo)
-        fut = self._loop.create_future()
+        fut = asyncio.get_event_loop().create_future()
         fut.set_result(cur)
         return _ContextManager(fut)
 
@@ -474,22 +468,17 @@ class Connection:
         # "MySQL server has gone away (%r)" % (e,))
         try:
             if self._unix_socket and self._host in ('localhost', '127.0.0.1'):
-                self._reader, self._writer = await \
-                    asyncio.wait_for(
-                        asyncio.open_unix_connection(
-                            self._unix_socket,
-                            loop=self._loop),
-                        timeout=self.connect_timeout)
+                self._reader, self._writer = await asyncio.wait_for(
+                    asyncio.open_unix_connection(self._unix_socket),
+                    timeout=self.connect_timeout
+                )
                 self.host_info = "Localhost via UNIX socket: " + \
                                  self._unix_socket
             else:
-                self._reader, self._writer = await \
-                    asyncio.wait_for(
-                        asyncio.open_connection(
-                            self._host,
-                            self._port,
-                            loop=self._loop),
-                        timeout=self.connect_timeout)
+                self._reader, self._writer = await asyncio.wait_for(
+                    asyncio.open_connection(self._host, self._port),
+                    timeout=self.connect_timeout
+                )
                 self._set_keep_alive()
                 self.host_info = "socket %s:%d" % (self._host, self._port)
 
@@ -502,7 +491,7 @@ class Connection:
             await self._get_server_information()
             await self._request_authentication()
 
-            self.connected_time = self._loop.time()
+            self.connected_time = asyncio.get_event_loop().time()
 
             if self.sql_mode is not None:
                 await self.query("SET sql_mode=%s" % (self.sql_mode,))
@@ -706,7 +695,7 @@ class Connection:
             # open_connection will cause it to negotiate TLS on an existing
             # connection not initiate a new one.
             self._reader, self._writer = await asyncio.open_connection(
-                sock=raw_sock, ssl=self._ssl_context, loop=self._loop,
+                sock=raw_sock, ssl=self._ssl_context,
                 server_hostname=self._host
             )
 
@@ -1046,7 +1035,8 @@ class Connection:
             else:
                 self._server_auth_plugin = data[i:server_end].decode('latin1')
 
-    def get_transaction_status(self):
+    @property
+    def in_transaction(self):
         return bool(self.server_status & SERVER_STATUS.SERVER_STATUS_IN_TRANS)
 
     def get_server_info(self):
@@ -1281,7 +1271,7 @@ class LoadLocalFile(object):
     def __init__(self, filename, connection):
         self.filename = filename
         self.connection = connection
-        self._loop = connection.loop
+        self._loop = asyncio.get_event_loop()
         self._file_object = None
         self._executor = None  # means use default executor
 

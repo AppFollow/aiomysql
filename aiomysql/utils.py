@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Coroutine
 
 
@@ -62,13 +63,6 @@ class _ConnectionContextManager(_ContextManager):
         self._obj = None
 
 
-class _PoolContextManager(_ContextManager):
-    async def __aexit__(self, exc_type, exc, tb):
-        self._obj.close()
-        await self._obj.wait_closed()
-        self._obj = None
-
-
 class _SAConnectionContextManager(_ContextManager):
     async def __aiter__(self):
         result = await self._coro
@@ -85,25 +79,37 @@ class _TransactionContextManager(_ContextManager):
         self._obj = None
 
 
-class _PoolAcquireContextManager(_ContextManager):
+class PoolContextManager(_ContextManager):
+    async def __aexit__(self, exc_type, exc, tb):
+        self._obj.close()
+        await self._obj.wait_closed()
+        self._obj = None
 
-    __slots__ = ('_coro', '_conn', '_pool')
 
-    def __init__(self, coro, pool):
-        self._coro = coro
-        self._conn = None
+class PoolAcquireContextManager:
+
+    __slots__ = ('_connection', '_done', '_pool')
+
+    def __init__(self, pool):
         self._pool = pool
+        self._done = False
+        self._connection = None
 
     async def __aenter__(self):
-        self._conn = await self._coro
-        return self._conn
+        if self._connection is not None or self._done:
+            raise Exception('Connection is already acquired')
+        self._connection = await self._pool._acquire()
+        return self._connection
 
     async def __aexit__(self, exc_type, exc, tb):
-        try:
-            await self._pool.release(self._conn)
-        finally:
-            self._pool = None
-            self._conn = None
+        self._done = True
+        connection = self._connection
+        self._connection = None
+        self._pool.release(connection)
+
+    async def __await__(self):
+        self._done = True
+        return self._pool._acquire().__await__()
 
 
 class _PoolConnectionContextManager:
@@ -149,3 +155,29 @@ class _PoolConnectionContextManager:
         finally:
             self._pool = None
             self._conn = None
+
+
+class CloseEvent:
+    def __init__(self, on_close):
+        self._close_init = asyncio.Event()
+        self._close_done = asyncio.Event()
+        self._on_close = on_close
+
+    async def wait(self):
+        await self._close_init.wait()
+        await self._close_done.wait()
+
+    def is_set(self):
+        return self._close_done.is_set() or self._close_init.is_set()
+
+    def set(self):
+        if self._close_init.is_set():
+            return
+
+        task = asyncio.create_task(self._on_close())
+        task.add_done_callback(self._cleanup)
+        self._close_init.set()
+
+    def _cleanup(self, task):
+        self._on_close = None
+        self._close_done.set()

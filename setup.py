@@ -48,18 +48,20 @@ classifiers = [
 ]
 
 
-setup(name='aiomysql',
-      version=read_version(),
-      description=('MySQL driver for asyncio.'),
-      long_description='\n\n'.join((read('README.rst'), read('CHANGES.txt'))),
-      classifiers=classifiers,
-      platforms=['POSIX'],
-      author="Nikolay Novik",
-      author_email="nickolainovik@gmail.com",
-      url='https://github.com/aio-libs/aiomysql',
-      download_url='https://pypi.python.org/pypi/aiomysql',
-      license='MIT',
-      packages=find_packages(exclude=['tests', 'tests.*']),
-      install_requires=install_requires,
-      extras_require=extras_require,
-      include_package_data=True)
+setup(
+    name='aiomysql',
+    version=read_version(),
+    description=('MySQL driver for asyncio.'),
+    long_description='\n\n'.join((read('README.rst'), read('CHANGES.txt'))),
+    classifiers=classifiers,
+    platforms=['POSIX'],
+    author="Nikolay Novik",
+    author_email="nickolainovik@gmail.com",
+    url='https://github.com/aio-libs/aiomysql',
+    download_url='https://pypi.python.org/pypi/aiomysql',
+    license='MIT',
+    packages=find_packages(exclude=['tests', 'tests.*']),
+    install_requires=install_requires,
+    extras_require=extras_require,
+    include_package_data=True
+)
