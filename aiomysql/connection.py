@@ -236,17 +236,17 @@ class Connection:
 
     @property
     def host(self):
-        """MySQL server IP address or name"""
+        """MySQL server IP address or name."""
         return self._host
 
     @property
     def port(self):
-        """MySQL server TCP/IP port"""
+        """MySQL server TCP/IP port."""
         return self._port
 
     @property
     def unix_socket(self):
-        """MySQL Unix socket file location"""
+        """MySQL Unix socket file location."""
         return self._unix_socket
 
     @property
@@ -256,7 +256,7 @@ class Connection:
 
     @property
     def user(self):
-        """User used while connecting to MySQL"""
+        """User used while connecting to MySQL."""
         return self._user
 
     @property
@@ -287,14 +287,14 @@ class Connection:
         return self._charset
 
     def close(self):
-        """Close socket connection"""
+        """Close socket connection."""
         if self._writer:
             self._writer.transport.close()
         self._writer = None
         self._reader = None
 
     async def ensure_closed(self):
-        """Send quit command and then close socket connection"""
+        """Send quit command and then close socket connection."""
         if self._writer is None:
             # connection has been closed
             return
@@ -316,8 +316,8 @@ class Connection:
     def get_autocommit(self):
         """Returns autocommit status for current MySQL session.
 
-        :returns bool: current autocommit status."""
-
+        :returns bool: current autocommit status.
+        """
         status = self.server_status & SERVER_STATUS.SERVER_STATUS_AUTOCOMMIT
         return bool(status)
 
@@ -330,10 +330,11 @@ class Connection:
         return True
 
     async def _send_autocommit_mode(self):
-        """Set whether or not to commit after every execute() """
+        """Set whether or not to commit after every `execute()`."""
         await self._execute_command(
             COMMAND.COM_QUERY,
-            "SET AUTOCOMMIT = %s" % self.escape(self.autocommit_mode))
+            "SET AUTOCOMMIT = %s" % self.escape(self.autocommit_mode)
+        )
         await self._read_ok_packet()
 
     async def begin(self):
@@ -352,7 +353,7 @@ class Connection:
         await self._read_ok_packet()
 
     async def select_db(self, db):
-        """Set current db"""
+        """Set current db."""
         await self._execute_command(COMMAND.COM_INIT_DB, db)
         await self._read_ok_packet()
 
@@ -364,7 +365,7 @@ class Connection:
         return result.rows
 
     def escape(self, obj):
-        """ Escape whatever value you pass to it"""
+        """Escape whatever value you pass to it."""
         if isinstance(obj, str):
             return "'" + self.escape_string(obj) + "'"
         if isinstance(obj, bytes):
@@ -382,7 +383,7 @@ class Connection:
         return escape_string(s)
 
     def cursor(self, *cursors):
-        """Instantiates and returns a cursor
+        """Instantiates and returns a cursor.
 
         By default, :class:`Cursor` is returned. It is possible to also give a
         custom cursor through the cursor_class parameter, but it needs to
@@ -586,6 +587,7 @@ class Connection:
         try:
             data = await self._reader.readexactly(num_bytes)
         except asyncio.IncompleteReadError as e:
+            import pdb; pdb.set_trace()
             msg = "Lost connection to MySQL server during query"
             raise OperationalError(2013, msg) from e
         except (IOError, OSError) as e:
@@ -1055,11 +1057,11 @@ class Connection:
             else:
                 raise InterfaceError(self._close_reason)
 
-    def __del__(self):
-        if self._writer:
-            warnings.warn("Unclosed connection {!r}".format(self),
-                          ResourceWarning)
-            self.close()
+    # def __del__(self):
+    #     if self._writer:
+    #         warnings.warn("Unclosed connection {!r}".format(self),
+    #                       ResourceWarning)
+    #         self.close()
 
     Warning = Warning
     Error = Error
@@ -1076,7 +1078,6 @@ class Connection:
 # TODO: move OK and EOF packet parsing/logic into a proper subclass
 # of MysqlPacket like has been done with FieldDescriptorPacket.
 class MySQLResult:
-
     def __init__(self, connection):
         self.connection = connection
         self.affected_rows = None

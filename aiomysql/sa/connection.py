@@ -1,5 +1,3 @@
-# ported from:
-# https://github.com/aio-libs/aiopg/blob/master/aiopg/sa/connection.py
 import weakref
 
 from sqlalchemy.sql import ClauseElement

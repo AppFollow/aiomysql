@@ -1,95 +1,116 @@
-import logging
 import asyncio
-import collections
+import logging
+import weakref
 
 from .connection import connect
-from .utils import (
-    CloseEvent,
-    PoolContextManager,
-    PoolAcquireContextManager
-)
 
 logger = logging.getLogger(__name__)
 
 
-def create_pool(minsize=1, maxsize=10, pool_recycle=-1, **kwargs):
-    coro = _create_pool(minsize=minsize, maxsize=maxsize,
-                        pool_recycle=pool_recycle, **kwargs)
-    return PoolContextManager(coro)
+def create_pool(init_count=2, max_count=10, **connect_kwargs):
+    return Pool(init_count, max_count, **connect_kwargs)
 
 
-async def _create_pool(minsize=1, maxsize=10, pool_recycle=-1, **kwargs):
-    pool = Pool(minsize=minsize, maxsize=maxsize,
-                pool_recycle=pool_recycle, **kwargs)
-    if minsize > 0:
-        # TODO: try/except block
-        async with pool._cond:
-            await pool._fill_free(override_min=False)
-    return pool
+class PoolAcquireContextManager:
+    __slots__ = ("connection", "timeout", "done", "pool")
+
+    def __init__(self, pool, timeout):
+        self.pool = pool
+        self.timeout = timeout
+        self.done = False
+        self.connection = None
+
+    async def __aenter__(self):
+        if self.connection is not None or self.done:
+            raise Exception("Connection is already acquired")
+        self._connection = await self.pool._acquire(self.timeout)
+        return self.connection
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.done = True
+        connection = self.connection
+        self.connection = None
+        self.pool.release(connection)
+
+    async def __await__(self):
+        self.done = True
+        return self.pool._acquire(self.timeout).__await__()
 
 
 class Pool:
-    def __init__(self, minsize, maxsize, pool_recycle, **kwargs):
-        if minsize < 0:
-            raise ValueError("minsize should be zero or greater")
-        if maxsize < minsize:
-            raise ValueError("maxsize should be not less than minsize")
-        self._minsize = minsize
-        self._conn_kwargs = kwargs
-        self._acquiring = 0
-        self._free = collections.deque(maxlen=maxsize)
-        self._cond = asyncio.Condition()
-        self._used = set()
-        self._close_state = CloseEvent(self._do_close)
-        self._recycle = pool_recycle
+    def __init__(self, init_count, max_count, **connect_kwargs):
+        if not isinstance(init_count, int) or init_count < 0:
+            raise ValueError("init_count should be positive integer")
+        if not isinstance(max_count, int) or max_count < init_count:
+            raise ValueError("max_count should be not less than init_count")
+        self._init_count = init_count
+        self._max_count = max_count
+        self._connect_kwargs = connect_kwargs
+        self._queue = None
+        self._used = weakref.WeakSet()
+
+        self._closing = False
+        self._closed = False
+        self._initializing = False
+        self._initialized = False
 
     def __repr__(self):
         return "<{} [size:[{}:{}], free:{}]>".format(
             self.__class__.__name__,
-            self.minsize,
-            self.maxsize,
+            self._init_count,
+            self._max_count,
             self.freesize
         )
 
+    def __await__(self):
+        return self._async__init__().__await__()
+
     async def __aenter__(self):
+        await self._async__init__()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, *exc):
         self.close()
         await self.ensure_closed()
 
-    @property
-    def echo(self):
-        return self._echo
+    async def _async__init__(self):
+        if self._initialized:
+            return
+        if self._initializing:
+            raise RuntimeError("The pool is being initialized in another task")
+        if self.closed:
+            raise RuntimeError("The pool is already closed")
+        self._initializing = True
+        try:
+            await self._initialize()
+            return self
+        finally:
+            self._initializing = False
+            self._initialized = True
+
+    async def _initialize(self):
+        self._queue = asyncio.LifoQueue(maxsize=self._max_count)
+        tasks = []
+        logger.debug("Fill the pool with %d connections", self._init_count)
+        for _ in range(self._init_count):
+            tasks.append(self._open_connection())
+        await asyncio.gather(*tasks)
 
     @property
-    def minsize(self):
-        return self._minsize
+    def init_count(self):
+        return self._init_count
 
     @property
-    def maxsize(self):
-        return self._free.maxlen
+    def max_count(self):
+        return self._max_count
 
     @property
-    def size(self):
-        return self.freesize + len(self._used) + self._acquiring
+    def free_count(self):
+        return self._queue.qsize()
 
     @property
-    def freesize(self):
-        return len(self._free)
-
-    async def clear(self):
-        async with self._cond:
-            await self._do_clear()
-            self._cond.notify()
-
-    async def _do_clear(self):
-        coroutines = []
-        while self._free:
-            connection = self._free.popleft()
-            connection.close()
-            coroutines.append(connection.ensure_closed())
-        await asyncio.gather(*coroutines)
+    def size(self) -> int:
+        return self.freesize + len(self._used)
 
     def close(self):
         if not self._close_state.is_set():
@@ -99,98 +120,60 @@ class Pool:
     def closed(self):
         return self._close_state.is_set()
 
-    async def ensure_closed(self):
+    async def ensure_closed(self) -> None:
         await self._close_state.wait()
 
     async def _do_close(self):
-        async with self._cond:
-            assert not self._acquiring, self._acquiring
-            coroutines = []
-            while self._free:
-                connection = self._free.popleft()
-                connection.close()
-                coroutines.append(connection.ensure_closed())
-            for connection in self._used:
-                connection.close()
-                coroutines.append(connection.ensure_closed())
-            await asyncio.gather(*coroutines)
+        tasks = []
+        while not self._queue.empty():
+            connection = self._queue.get_nowait()
+            connection.close()
+            tasks.append(connection.ensure_closed())
+        for connection in self._used:
+            connection.close()
+            tasks.append(connection.ensure_closed())
+        await asyncio.gather(*tasks)
 
-    # TODO: add timeout
-    def acquire(self):
-        return PoolAcquireContextManager(self)
+    async def _open_connection(self):
+        connection = await connect(**self._connect_kwargs)
+        self._queue.put_nowait(connection)
 
-    async def _acquire(self):
+    def acquire(self, timeout=None):
+        return PoolAcquireContextManager(self, timeout)
+
+    async def _acquire(self, timeout):
         if self.closed:
-            raise RuntimeError('Cannot acquire connection after closing pool')
-        async with self._cond:
-            while True:
-                await self._fill_free(override_min=True)
-                if self.freesize:
-                    conn = self._free.popleft()
-                    assert not conn.closed, conn
-                    assert conn not in self._used, (conn, self._used)
-                    self._used.add(conn)
-                    return conn
-                else:
-                    await self._cond.wait()
-
-    async def _fill_free(self, *, override_min):
-        # free_size = len(self._free)
-        # n = 0
-        # while n < free_size:
-        #     conn = self._free[-1]
-        #     if conn._reader.at_eof() or conn._reader.exception():
-        #         self._free.pop()
-        #         conn.close()
-
-        #     elif (self._recycle > -1 and
-        #           self._loop.time() - conn.last_usage > self._recycle):
-        #         self._free.pop()
-        #         conn.close()
-
-        #     else:
-        #         self._free.rotate()
-        #     n += 1
-
-        while self.size < self.minsize:
-            self._acquiring += 1
-            try:
-                connection = await connect(**self._conn_kwargs)
-                self._free.append(connection)
-                self._cond.notify()
-            finally:
-                self._acquiring -= 1
-
-        if self.freesize:
-            return
-
-        if override_min and self.size < self.maxsize:
-            self._acquiring += 1
-            try:
-                connection = await connect(**self._conn_kwargs)
-                self._free.append(connection)
-                self._cond.notify()
-            finally:
-                self._acquiring -= 1
-
-    async def _wakeup(self):
-        async with self._cond:
-            self._cond.notify()
+            raise RuntimeError("Cannot acquire connection, the pool is closed")
+        try:
+            connection = await asyncio.wait_for(
+                self._queue.get(),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError("Timed out acquiring connection")
+        assert not connection.closed, connection
+        assert connection not in self._used, (connection, seld._used)
+        self._used.add(connection)
+        return connection
 
     def release(self, connection):
         assert connection in self._used, (connection, self._used)
+        logger.debug("Remove connection from used")
         self._used.remove(connection)
 
-        if not connection.closed:
+        if connection.closed:
+            logger.debug("Connection is already closed, discard it")
+        else:
             if connection.in_transaction:
                 logger.warning(
-                    "Connection %r is in transaction, closing it.",
+                    "Connection %r is in transaction, closing it",
                     connection
                 )
                 connection.close()
             else:
-                if self.maxsize and self.freesize < self.maxsize:
-                    self._free.append(connection)
+                if self.free_count < self.max_count:
+                    logger.debug("Put open connection back to the pool")
+                    self._queue.put_nowait(connection)
                 else:
+                    logger.debug("The pool is full, closing connection")
                     connection.close()
-        asyncio.create_task(self._wakeup())

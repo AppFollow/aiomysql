@@ -127,13 +127,16 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture
-def mysql_params(mysql_server):
-    params = {**mysql_server['conn_params'],
-              "db": os.environ.get('MYSQL_DB', 'test_pymysql'),
-              # "password": os.environ.get('MYSQL_PASSWORD', ''),
-              "local_infile": True,
-              "use_unicode": True,
-              }
+def mysql_params():
+    params = {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "root",
+        "password": "password",
+        "db": "testdb",
+        "local_infile": True,
+        "use_unicode": True,
+    }
     return params
 
 
@@ -178,7 +181,7 @@ async def connection_creator(mysql_params):
 
 
 @pytest.fixture
-async def pool_creator(mysql_params):
+async def pool_factory(mysql_params):
     pools = []
 
     async def f(**kw):
@@ -192,7 +195,7 @@ async def pool_creator(mysql_params):
 
     for pool in pools:
         pool.close()
-        await pool.wait_closed()
+        await pool.ensure_closed()
 
 
 @pytest.fixture

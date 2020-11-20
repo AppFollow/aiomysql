@@ -84,7 +84,7 @@ class Cursor:
 
     @property
     def rowcount(self):
-        """Returns the number of rows that has been produced of affected.
+        """Returns the number of rows that has been produced or affected.
 
         This read-only attribute specifies the number of rows that the
         last :meth:`execute` produced (for Data Query Language
@@ -105,7 +105,6 @@ class Cursor:
         cursor in the result set or ``None`` if the index cannot be
         determined.
         """
-
         return self._rownumber
 
     @property
@@ -115,7 +114,6 @@ class Cursor:
         This read/write attribute specifies the number of rows to
         fetch at a time with fetchmany(). It defaults to
         1 meaning to fetch a single row at a time.
-
         """
         return self._arraysize
 
@@ -126,7 +124,6 @@ class Cursor:
         This read/write attribute specifies the number of rows to
         fetch at a time with fetchmany(). It defaults to
         1 meaning to fetch a single row at a time.
-
         """
         self._arraysize = val
 
@@ -154,8 +151,7 @@ class Cursor:
 
     async def close(self):
         """Closing a cursor just exhausts all remaining data."""
-        conn = self._connection
-        if conn is None:
+        if self._connection is None:
             return
         try:
             while (await self.nextset()):
@@ -182,7 +178,7 @@ class Cursor:
         """Does nothing, required by DB API."""
 
     async def nextset(self):
-        """Get the next query set"""
+        """Get the next query set."""
         conn = self._get_db()
         current_result = self._result
         if current_result is None or current_result is not conn._result:
@@ -206,7 +202,7 @@ class Cursor:
             return conn.escape(args)
 
     def mogrify(self, query, args=None):
-        """ Returns the exact string that is sent to the database by calling
+        """Returns the exact string that is sent to the database by calling
         the execute() method. This method follows the extension to the DB
         API 2.0 followed by Psycopg.
 
@@ -219,7 +215,7 @@ class Cursor:
         return query
 
     async def execute(self, query, args=None):
-        """Executes the given operation
+        """Executes the given operation.
 
         Executes the given operation substituting any markers with
         the given parameters.
@@ -231,14 +227,9 @@ class Cursor:
         :param args: ``tuple`` or ``list`` of arguments for sql query
         :returns: ``int``, number of rows that has been produced of affected
         """
-        conn = self._get_db()
-
+        query = self.mogrify(query, args)
         while (await self.nextset()):
             pass
-
-        if args is not None:
-            query = query % self._escape_args(args, conn)
-
         await self._query(query)
         self._executed = query
         if self._echo:
@@ -247,7 +238,7 @@ class Cursor:
         return self._rowcount
 
     async def executemany(self, query, args):
-        """Execute the given operation multiple times
+        """Execute the given operation multiple times.
 
         The executemany() method will execute the operation iterating
         over the list of parameters in seq_params.
@@ -366,7 +357,7 @@ class Cursor:
         return args
 
     def fetchone(self):
-        """Fetch the next row """
+        """Fetch the next row."""
         self._check_executed()
         fut = self._loop.create_future()
 
@@ -404,7 +395,7 @@ class Cursor:
         return fut
 
     def fetchall(self):
-        """Returns all rows of a query result set
+        """Returns all rows of a query result set.
 
         :returns: ``list`` of fetched rows
         """
@@ -621,13 +612,13 @@ class SSCursor(Cursor):
         return self._rowcount
 
     async def _read_next(self):
-        """Read next row """
+        """Read next row."""
         row = await self._result._read_rowdata_packet_unbuffered()
         row = self._conv_row(row)
         return row
 
     async def fetchone(self):
-        """ Fetch next row """
+        """Fetch next row."""
         self._check_executed()
         row = await self._read_next()
         if row is None:
